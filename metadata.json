@@ -1,0 +1,6 @@
+{
+  "name": "كل كلمة حكاية",
+  "description": "منصة أدبية تفاعلية ومكتبة رقمية متكاملة تعمل على الويب وتطبيقات الهواتف الذكية بتجربة قراءة هادئة ومشهد تقديمي سينمائي.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

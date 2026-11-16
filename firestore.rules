@@ -1,0 +1,265 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Core Helpers
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isBootstrappedSuperAdmin() {
+      return isVerifiedUser() && request.auth.token.email == 'labtopmh@gmail.com';
+    }
+
+    function hasRoleDoc() {
+      return isVerifiedUser() && exists(/databases/$(database)/documents/roles/$(request.auth.uid));
+    }
+
+    function roleDoc() {
+      return get(/databases/$(database)/documents/roles/$(request.auth.uid)).data;
+    }
+
+    function isSuperAdmin() {
+      return isBootstrappedSuperAdmin() || (hasRoleDoc() && roleDoc().role == 'super_admin');
+    }
+
+    function isAssistant() {
+      return isSuperAdmin() || (hasRoleDoc() && roleDoc().role == 'assistant');
+    }
+
+    // Validation Helpers
+    function isValidBook(data) {
+      return data.id is string && isValidId(data.id)
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 160
+        && data.author is string && data.author.size() >= 1 && data.author.size() <= 120
+        && data.category in ['أدب وخواطر', 'روايات قصيرة', 'حكايات ملهمة', 'تنمية وبصيرة', 'شعر ونثر']
+        && data.synopsis is string && data.synopsis.size() >= 1 && data.synopsis.size() <= 1000
+        && data.coverColor is string && data.coverColor.size() >= 3 && data.coverColor.size() <= 40
+        && data.coverImage is string && data.coverImage.size() <= 500
+        && data.readingMinutes is number && data.readingMinutes >= 1 && data.readingMinutes <= 600
+        && data.featured is bool
+        && data.chapters is list && data.chapters.size() >= 1 && data.chapters.size() <= 30
+        && data.createdBy is string && data.createdBy.size() >= 1 && data.createdBy.size() <= 128
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidQuote(data) {
+      return data.id is string && isValidId(data.id)
+        && data.text is string && data.text.size() >= 4 && data.text.size() <= 600
+        && data.author is string && data.author.size() >= 1 && data.author.size() <= 120
+        && data.sourceTitle is string && data.sourceTitle.size() <= 160
+        && data.category in ['كلمات تلمس القلب', 'اقتباس اليوم', 'حكم وأقوال', 'تأملات هادئة']
+        && data.mood is string && data.mood.size() >= 1 && data.mood.size() <= 60
+        && data.isDailyHighlight is bool
+        && data.createdBy is string && data.createdBy.size() >= 1 && data.createdBy.size() <= 128
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidTeamMember(data) {
+      return data.id is string && isValidId(data.id)
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 100
+        && data.roleTitle is string && data.roleTitle.size() >= 1 && data.roleTitle.size() <= 120
+        && data.roleLevel in ['super_admin', 'chief_assistant', 'assistant']
+        && data.bio is string && data.bio.size() >= 1 && data.bio.size() <= 500
+        && data.portraitUrl is string && data.portraitUrl.size() >= 1 && data.portraitUrl.size() <= 500
+        && data.accentTone is string && data.accentTone.size() >= 1 && data.accentTone.size() <= 40
+        && data.sortOrder is number && data.sortOrder >= 1 && data.sortOrder <= 50
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidUserProfile(data, userId) {
+      return data.uid is string && data.uid == userId && isValidId(data.uid)
+        && data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 120
+        && data.email is string && data.email.size() >= 3 && data.email.size() <= 200
+        && data.theme in ['cream', 'rose', 'lavender', 'sky', 'mint', 'peach']
+        && data.fontSize in ['small', 'medium', 'large']
+        && data.notificationsEnabled is bool
+        && data.favoriteBookIds is list && data.favoriteBookIds.size() <= 200
+        && (data.favoriteBookIds.size() == 0 || data.favoriteBookIds[0] is string)
+        && data.favoriteQuoteIds is list && data.favoriteQuoteIds.size() <= 200
+        && (data.favoriteQuoteIds.size() == 0 || data.favoriteQuoteIds[0] is string)
+        && data.readingProgress is map && data.readingProgress.keys().size() <= 200
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidRoleAssignment(data, userId) {
+      return data.uid is string && data.uid == userId && isValidId(data.uid)
+        && data.email is string && data.email.size() >= 3 && data.email.size() <= 200
+        && data.role in ['super_admin', 'assistant', 'reader']
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 120
+        && data.assignedBy is string && data.assignedBy.size() >= 1 && data.assignedBy.size() <= 128
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidContactMessage(data) {
+      return data.id is string && isValidId(data.id)
+        && data.name is string && data.name.size() >= 2 && data.name.size() <= 100
+        && data.email is string && data.email.size() >= 5 && data.email.size() <= 200
+        && data.subject is string && data.subject.size() >= 2 && data.subject.size() <= 160
+        && data.message is string && data.message.size() >= 5 && data.message.size() <= 2000
+        && data.status in ['new', 'reviewed']
+        && data.createdAt is timestamp;
+    }
+
+    // 1. Books Collection
+    match /books/{bookId} {
+      allow get: if isValidId(bookId);
+      allow list: if true;
+      allow create: if isAssistant()
+        && isValidId(bookId)
+        && incoming().keys().hasAll(['id', 'title', 'author', 'category', 'synopsis', 'coverColor', 'coverImage', 'readingMinutes', 'featured', 'chapters', 'createdBy', 'createdAt', 'updatedAt'])
+        && incoming().keys().hasOnly(['id', 'title', 'author', 'category', 'synopsis', 'coverColor', 'coverImage', 'readingMinutes', 'featured', 'chapters', 'createdBy', 'createdAt', 'updatedAt'])
+        && isValidBook(incoming())
+        && incoming().id == bookId
+        && incoming().createdBy == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isAssistant()
+        && isValidId(bookId)
+        && isValidBook(incoming())
+        && incoming().id == existing().id
+        && incoming().createdBy == existing().createdBy
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'author', 'category', 'synopsis', 'coverColor', 'coverImage', 'readingMinutes', 'featured', 'chapters', 'updatedAt']);
+      allow delete: if isSuperAdmin() && isValidId(bookId);
+    }
+
+    // 2. Quotes Collection
+    match /quotes/{quoteId} {
+      allow get: if isValidId(quoteId);
+      allow list: if true;
+      allow create: if isAssistant()
+        && isValidId(quoteId)
+        && incoming().keys().hasAll(['id', 'text', 'author', 'sourceTitle', 'category', 'mood', 'isDailyHighlight', 'createdBy', 'createdAt', 'updatedAt'])
+        && incoming().keys().hasOnly(['id', 'text', 'author', 'sourceTitle', 'category', 'mood', 'isDailyHighlight', 'createdBy', 'createdAt', 'updatedAt'])
+        && isValidQuote(incoming())
+        && incoming().id == quoteId
+        && incoming().createdBy == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isAssistant()
+        && isValidId(quoteId)
+        && isValidQuote(incoming())
+        && incoming().id == existing().id
+        && incoming().createdBy == existing().createdBy
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['text', 'author', 'sourceTitle', 'category', 'mood', 'isDailyHighlight', 'updatedAt']);
+      allow delete: if isSuperAdmin() && isValidId(quoteId);
+    }
+
+    // 3. Team Members Collection (Super Admin Only Writes)
+    match /team/{memberId} {
+      allow get: if isValidId(memberId);
+      allow list: if true;
+      allow create: if isSuperAdmin()
+        && isValidId(memberId)
+        && incoming().keys().hasAll(['id', 'name', 'roleTitle', 'roleLevel', 'bio', 'portraitUrl', 'accentTone', 'sortOrder', 'updatedAt'])
+        && incoming().keys().hasOnly(['id', 'name', 'roleTitle', 'roleLevel', 'bio', 'portraitUrl', 'accentTone', 'sortOrder', 'updatedAt'])
+        && isValidTeamMember(incoming())
+        && incoming().id == memberId
+        && incoming().updatedAt == request.time;
+      allow update: if isSuperAdmin()
+        && isValidId(memberId)
+        && isValidTeamMember(incoming())
+        && incoming().id == existing().id
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'roleTitle', 'roleLevel', 'bio', 'portraitUrl', 'accentTone', 'sortOrder', 'updatedAt']);
+      allow delete: if isSuperAdmin() && isValidId(memberId);
+    }
+
+    // 4. User Profiles (Strict PII Isolation)
+    match /users/{userId} {
+      allow get: if isValidId(userId) && (isOwner(userId) || isSuperAdmin());
+      allow list: if isSuperAdmin();
+      allow create: if isVerifiedUser()
+        && isOwner(userId)
+        && isValidId(userId)
+        && incoming().keys().hasAll(['uid', 'displayName', 'email', 'theme', 'fontSize', 'notificationsEnabled', 'favoriteBookIds', 'favoriteQuoteIds', 'readingProgress', 'updatedAt'])
+        && incoming().keys().hasOnly(['uid', 'displayName', 'email', 'theme', 'fontSize', 'notificationsEnabled', 'favoriteBookIds', 'favoriteQuoteIds', 'readingProgress', 'updatedAt'])
+        && isValidUserProfile(incoming(), userId)
+        && incoming().updatedAt == request.time;
+      allow update: if isVerifiedUser()
+        && isOwner(userId)
+        && isValidId(userId)
+        && isValidUserProfile(incoming(), userId)
+        && incoming().uid == existing().uid
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'email', 'theme', 'fontSize', 'notificationsEnabled', 'favoriteBookIds', 'favoriteQuoteIds', 'readingProgress', 'updatedAt']);
+      allow delete: if isSuperAdmin() && isValidId(userId);
+    }
+
+    // 5. RBAC Role Assignments (Super Admin Exclusive Management)
+    match /roles/{userId} {
+      allow get: if isValidId(userId) && (isOwner(userId) || isSuperAdmin());
+      allow list: if isSuperAdmin();
+      allow create: if isSuperAdmin()
+        && isValidId(userId)
+        && incoming().keys().hasAll(['uid', 'email', 'role', 'title', 'assignedBy', 'updatedAt'])
+        && incoming().keys().hasOnly(['uid', 'email', 'role', 'title', 'assignedBy', 'updatedAt'])
+        && isValidRoleAssignment(incoming(), userId)
+        && incoming().assignedBy == request.auth.uid
+        && incoming().updatedAt == request.time;
+      allow update: if isSuperAdmin()
+        && isValidId(userId)
+        && isValidRoleAssignment(incoming(), userId)
+        && incoming().uid == existing().uid
+        && incoming().assignedBy == request.auth.uid
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['email', 'role', 'title', 'assignedBy', 'updatedAt']);
+      allow delete: if isSuperAdmin() && isValidId(userId);
+    }
+
+    // 6. Contact Messages
+    match /contactMessages/{messageId} {
+      allow get: if isAssistant() && isValidId(messageId);
+      allow list: if isAssistant();
+      allow create: if isValidId(messageId)
+        && incoming().keys().hasAll(['id', 'name', 'email', 'subject', 'message', 'status', 'createdAt'])
+        && incoming().keys().hasOnly(['id', 'name', 'email', 'subject', 'message', 'status', 'createdAt'])
+        && isValidContactMessage(incoming())
+        && incoming().id == messageId
+        && incoming().status == 'new'
+        && incoming().createdAt == request.time;
+      allow update: if isAssistant()
+        && isValidId(messageId)
+        && isValidContactMessage(incoming())
+        && incoming().id == existing().id
+        && incoming().name == existing().name
+        && incoming().email == existing().email
+        && incoming().subject == existing().subject
+        && incoming().message == existing().message
+        && incoming().createdAt == existing().createdAt
+        && existing().status != 'reviewed'
+        && incoming().diff(existing()).affectedKeys().hasOnly(['status']);
+      allow delete: if isSuperAdmin() && isValidId(messageId);
+    }
+  }
+}
